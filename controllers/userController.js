@@ -109,9 +109,9 @@ exports.createProfile = async (req, res) => {
     try {
         const { firstName, lastName, companyName, email, bio, location, address, preference, business_category } = req.body;
         const userId = req.user;
-        console.log("user id : ", userId)
+
         // Check if all required fields are present
-        if (!firstName || !lastName || !email || !location || !preference || !address, !business_category) {
+        if (!firstName || !lastName || !email || !location || !preference || !address || !business_category) {
             return res.status(400).json({ message: "Please enter all the required fields", success: false });
         }
 
@@ -120,18 +120,26 @@ exports.createProfile = async (req, res) => {
         if (is_email) {
             return res.status(400).json({ message: "Email already exists! Please try another.", success: false });
         }
-        if (req.file && req.file.location) {
-            profilePicture = req.file.location; // `location` contains the full S3 URL
-        } else {
-            return res.status(400).json({ message: "File upload failed", success: false });
+
+        // Check if the user already has a profile
+        const existingProfile = await userModel.findOne({ userId });
+        if (existingProfile) {
+            return res.status(400).json({ message: "User profile already exists, You can edit it", success: false });
         }
 
-        // Fetch the user from the Contact model using contactId
+        // Fetch the user from the Contact model
         const user = await contactModel.findById(userId);
         if (!user) {
             return res.status(404).json({ message: "User not found", success: false });
         }
 
+        // Handle file upload logic
+        let profilePicture;
+        if (req.file && req.file.location) {
+            profilePicture = req.file.location;
+        } else {
+            return res.status(400).json({ message: "File upload failed", success: false });
+        }
 
         // Create the profile
         const profile = new userModel({
@@ -145,7 +153,7 @@ exports.createProfile = async (req, res) => {
             address,
             preference,
             profilePicture,
-            business_category
+            business_category,
         });
 
         // Save the new profile
@@ -153,14 +161,13 @@ exports.createProfile = async (req, res) => {
         return res.status(200).json({ data: profile, message: "Profile created successfully", success: true });
 
     } catch (error) {
-        if (error.message === 'User profile already exists, You can edit it') {
-            res.status(400).json({ error: error.message }); // Send proper error response
-        } else {
-            console.log(error);
-            return res.status(500).json({ message: "Something went wrong", success: false });
+        console.error("Error creating profile:", error); // Log the error
+        if (error.code === 11000) {
+            return res.status(400).json({ error: "User profile already exists, You can edit it" });
         }
+        return res.status(500).json({ message: "Something went wrong", success: false });
     }
-}
+};
 
 exports.getUser = async (req, res) => {
     try {
